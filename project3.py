@@ -1,20 +1,27 @@
+"""Project 2 pi-athlon
+
+This project is intended to have the pi-athlon follow a line and self drive
+itself along a track. Also adds temperate sensor reading and buzzer for
+object detection.
+
+"""
+import os
+import json
+import time
 import ftplib
 import requests
 import paramiko
-import os
 from logger import pi_logger
-import json
 # robot
 import RPi.GPIO as GPIO
 import Robot
-import time
 # init pins
-buzzer_pin = 15
-obstacle_pin = 18
-rgb_pins = {"pin_R": 35, "pin_G": 38, "pin_B": 40}
-red = 0x00FFFF
-green = 0xFF00FF
-blue = 0xFFFF00
+BUZZER_PIN = 15
+OBSTACLE_PIN = 18
+RGB_PINS = {"pin_R": 35, "pin_G": 38, "pin_B": 40}
+RED = 0x00FFFF
+GREEN = 0xFF00FF
+BLUE = 0xFFFF00
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BOARD)
@@ -25,16 +32,16 @@ RIGHT_TRIM = 0
 robot = Robot.Robot(left_trim=LEFT_TRIM, right_trim=RIGHT_TRIM)
 
 # rgb
-for pin in rgb_pins:
+for _, pin in RGB_PINS.items():
     # Set pins' mode is output
-    GPIO.setup(rgb_pins[pin], GPIO.OUT)
+    GPIO.setup(RGB_PINS[pin], GPIO.OUT)
     # Set pins to high(+3.3V) to off led
-    GPIO.output(rgb_pins[pin], GPIO.HIGH)
+    GPIO.output(RGB_PINS[pin], GPIO.HIGH)
 
 # set Frequece to 2KHz
-p_R = GPIO.PWM(rgb_pins['pin_R'], 2000)
-p_G = GPIO.PWM(rgb_pins['pin_G'], 2000)
-p_B = GPIO.PWM(rgb_pins['pin_B'], 2000)
+p_R = GPIO.PWM(RGB_PINS['pin_R'], 2000)
+p_G = GPIO.PWM(RGB_PINS['pin_G'], 2000)
+p_B = GPIO.PWM(RGB_PINS['pin_B'], 2000)
 
 # Initial duty Cycle = 0(leds off)
 p_R.start(0)
@@ -43,54 +50,72 @@ p_B.start(0)
 
 
 def setup():
+    """Setup buzzer pins
+    """
     # buzzer
-    GPIO.setup(buzzer_pin, GPIO.OUT)
+    GPIO.setup(BUZZER_PIN, GPIO.OUT)
     # obstacle
-    GPIO.setup(obstacle_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    GPIO.setup(OBSTACLE_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 
-def map_rgb(x, in_min, in_max, out_min, out_max):
-    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
+def map_rgb(x_val, in_min, in_max, out_min, out_max):
+    """Sets the RGB values for light
+
+    Args:
+        x_val (int): x value
+        in_min (int): input min
+        in_max (int): input max
+        out_min (int): output min
+        out_max (int): output max
+    """
+    return (x_val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
 
-def setColor(col):
-    R_val = (col & 0xff0000) >> 16
-    G_val = (col & 0x00ff00) >> 8
-    B_val = (col & 0x0000ff) >> 0
+def set_color(col):
+    """Sets color
 
-    R_val = map_rgb(R_val, 0, 255, 0, 100)
-    G_val = map_rgb(G_val, 0, 255, 0, 100)
-    B_val = map_rgb(B_val, 0, 255, 0, 100)
+    Args:
+        color_str (str): name of color
+    """
+    r_val = (col & 0xff0000) >> 16
+    g_val = (col & 0x00ff00) >> 8
+    b_val = (col & 0x0000ff) >> 0
+
+    r_val = map_rgb(r_val, 0, 255, 0, 100)
+    g_val = map_rgb(g_val, 0, 255, 0, 100)
+    b_val = map_rgb(b_val, 0, 255, 0, 100)
 
     # Change duty cycle
-    p_R.ChangeDutyCycle(R_val)
-    p_G.ChangeDutyCycle(G_val)
-    p_B.ChangeDutyCycle(B_val)
+    p_R.ChangeDutyCycle(r_val)
+    p_G.ChangeDutyCycle(g_val)
+    p_B.ChangeDutyCycle(b_val)
 
 
 def destroy():
+    """Reset pins
+    """
     # buzzer
-    GPIO.output(buzzer_pin, GPIO.LOW)
+    GPIO.output(BUZZER_PIN, GPIO.LOW)
     # rgb
     p_R.stop()
     p_G.stop()
     p_B.stop()
-    for pin in rgb_pins:
+    for _, pin in RGB_PINS.items():
         # Turn off all leds
-        GPIO.output(rgb_pins[pin], GPIO.HIGH)
+        GPIO.output(RGB_PINS[pin], GPIO.HIGH)
 
     GPIO.cleanup()
 
 
-def download_file_from_ftp_server(uri):
+def download_file_from_ftp_server():
     """Download a file from a FTP server and return its contents"""
 
     pi_logger.debug("Download file from FTP")
     ftp = ftplib.FTP("10.37.212.2")
     ftp.login("pi", "V0c3r@123")
     ftp.cwd("/var/ftp/pub")
-    with open("example_instuctions.json", "wb") as download_file:
-        ftp.retrbinary(f"RETR example_instructions.json", download_file.write)
+    with open("example_instuctions.json", "wb") as downloaded_file:
+        ftp.retrbinary(f"RETR example_instructions.json", downloaded_file.write)
     ftp.quit()
 
 
@@ -98,12 +123,12 @@ def download_file_from_http_server(uri):
     """Download a file from a HTTP web server and return its contents"""
 
     pi_logger.debug("Download file from HTTP")
-    r = requests.get(uri)
-    with open("example_instructions.json", "wb") as download_file:
-        download_file.write(r.content)
+    res = requests.get(uri)
+    with open("example_instructions.json", "wb") as downloaded_file:
+        downloaded_file.write(res.content)
 
 
-def download_file_using_ssh(uri):
+def download_file_using_ssh():
     """Download a file from a a device using SSH and return its contents"""
 
     pi_logger.debug("Download file from SSH")
@@ -112,20 +137,20 @@ def download_file_using_ssh(uri):
     ssh_pw = "V0c3r@123"
     remote_dir = "/var/ssh/example_instructions.json"
     local_dir = os.path.join(os.getcwd(), "example_instructions.json")
-    s = paramiko.Transport((ssh_host, 22))
-    s.connect(username=ssh_user, password=ssh_pw)
-    sftp = paramiko.SFTPClient.from_transport(s)
+    s_con = paramiko.Transport((ssh_host, 22))
+    s_con.connect(username=ssh_user, password=ssh_pw)
+    sftp = paramiko.SFTPClient.from_transport(s_con)
     sftp.get(remote_dir, local_dir)
 
 
 def start_instructions():
     """Robot will turn LED green and beep 5 secs"""
-    setColor(green)
+    set_color(GREEN)
     start_time = time.time()
     while True:
-        GPIO.output(buzzer_pin, GPIO.HIGH)
+        GPIO.output(BUZZER_PIN, GPIO.HIGH)
         time.sleep(0.5)
-        GPIO.output(buzzer_pin, GPIO.LOW)
+        GPIO.output(BUZZER_PIN, GPIO.LOW)
         time.sleep(0.5)
         if time.time() > start_time + 5:
             return
@@ -160,28 +185,28 @@ def follow_instruction(instruction):
     if instruction["action"] == "play_sound":
         start_time = time.time()
         while True:
-            GPIO.output(buzzer_pin, GPIO.HIGH)
+            GPIO.output(BUZZER_PIN, GPIO.HIGH)
             time.sleep(0.5)
-            GPIO.output(buzzer_pin, GPIO.LOW)
+            GPIO.output(BUZZER_PIN, GPIO.LOW)
             time.sleep(0.5)
             if time.time() > start_time + int(instruction["time"]):
                 return
     if instruction["action"] == "led_blue":
         start_time = time.time()
         while True:
-            setColor(blue)
+            set_color(BLUE)
             if time.time() > start_time + int(instruction["time"]):
                 return
     if instruction["action"] == "led_green":
         start_time = time.time()
         while True:
-            setColor(green)
+            set_color(GREEN)
             if time.time() > start_time + int(instruction["time"]):
                 return
     if instruction["action"] == "led_red":
         start_time = time.time()
         while True:
-            setColor(red)
+            set_color(RED)
             if time.time() > start_time + int(instruction["time"]):
                 return
     if instruction["action"] == "stop":
@@ -198,16 +223,15 @@ def follow_instructions(file_name):
     pi_logger.debug("Starting robot instructions")
     start_instructions()
 
-    with open(file_name) as input_json:
+    with open(file_name, encoding="utf-8") as input_json:
         data = json.load(input_json)
         for instruction in data:
             print(
                 f"[instruction]: {instruction['action']} [time]: {instruction['time']}")
 
-    pass
-
 
 def download_file(uri):
+    """Downloads file"""
     if uri.startswith("ftp://"):
         method = download_file_from_ftp_server
     elif uri.startswith("http://"):
@@ -221,6 +245,7 @@ def download_file(uri):
 
 
 def main():
+    """Main function"""
     pi_logger.debug("Byron's starting Project 3")
     # setup robot
     setup()
@@ -235,9 +260,9 @@ def main():
     if method == "http":
         download_file_from_http_server(uri)
     if method == "ftp":
-        download_file_from_ftp_server(uri)
+        download_file_from_ftp_server()
     if method == "ssh":
-        download_file_using_ssh(uri)
+        download_file_using_ssh()
 
     follow_instructions(file_name)
 
